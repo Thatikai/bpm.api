@@ -6,26 +6,27 @@ var	path = require('path'),
 	express = require('express'),
 	morgan = require('morgan'),
 	bodyParser = require('body-parser'),
+	session = require('express-session'),
     compress = require('compression'),
     methodOverride = require('method-override'),
 	cookieParser = require('cookie-parser'),
 	helmet = require('helmet'),
-	//passport = require('passport'),
-	// mongoStore = require('connect-mongo')({
-	// 	session: session
-	// }),
+	passport = require('passport'),
+	LocalStrategy = require('passport-local').Strategy,
+	mongoose = require('mongoose'),
+	mongoStore = require('connect-mongo')(session),
     config = require('./config');
-
-
 
 module.exports = function(db) {
 	// Initialize express app
 	var app = express();
 
 	// Globbing model files
+	
 	config.getGlobbedFiles('./app/models/**/*.js').forEach(function(modelPath) {
 		require(path.resolve(modelPath));
 	});
+	var User = mongoose.model('User');
 
 	// Setting application local variables
 	app.locals.title = config.app.title;
@@ -49,8 +50,6 @@ module.exports = function(db) {
 	// Showing stack errors
 	app.set('showStackError', true);
 
-	app.set('view engine', 'html');
-
 	// Environment dependent middleware
 	if (process.env.NODE_ENV === 'development') {
 		// Enable logger (morgan)
@@ -72,21 +71,32 @@ module.exports = function(db) {
 	// CookieParser should be above session
 	app.use(cookieParser());
 
-	// Express MongoDB session storage
-	// app.use(session({
-	// 	saveUninitialized: true,
-	// 	resave: true,
-	// 	secret: config.sessionSecret,
-	// 	store: new mongoStore({
-	// 		db: db.connection.db,
-	// 		collection: config.sessionCollection
-	// 	})
-	// }));
+	//Express MongoDB session storage
+	app.use(session({
+		saveUninitialized: true,
+		resave: true,
+		secret: config.sessionSecret,
+		store: new mongoStore({
+			mongooseConnection: db.connection,
+			collection: config.sessionCollection
+		})
+	}));
+	// use passport session
+	app.use(passport.initialize());
+	app.use(passport.session());
 
-	// // use passport session
-	// app.use(passport.initialize());
-	// app.use(passport.session());
-
+	passport.use(new LocalStrategy(
+	function(username, password, done) {
+		User.findOne({ username: username }, function (err, user) {
+		console.log('User:'+user);
+		console.log('Error:'+err);
+		if (err) { return done(err); }
+		if (!user) { return done(null, false); }
+		if (!user.authenticate(password)) { return done(null, false); }
+		return done(null, user);
+		});
+	}
+	));
 	// // connect flash for flash messages
 	// app.use(flash());
 
@@ -99,26 +109,30 @@ module.exports = function(db) {
 
 	// Globbing routing files
 	config.getGlobbedFiles('./app/routes/**/*.js').forEach(function(routePath) {
-		require(path.resolve(routePath))(app);
+		var route = require(path.resolve(routePath));
+		route(app);
 	});
+
 
 	// Assume 'not found' in the error msgs is a 404. this is somewhat silly, but valid, you can do whatever you like, set properties, use instanceof etc.
 	app.use(function(err, req, res, next) {
 		// If the error object doesn't exists
+		console.log("handling errors, res");
+
 		if (!err) return next();
 
 		// Log it
 		console.error(err.stack);
 
 		// Error page
-		res.status(500).render('500', {
+		res.status(500).status('500', {
 			error: err.stack
 		});
 	});
 
 	// Assume 404 since no middleware responded
 	app.use(function(req, res) {
-		res.status(404).render('404', {
+		res.status(404).status('404', {
 			url: req.originalUrl,
 			error: 'Not Found'
 		});
@@ -142,7 +156,7 @@ module.exports = function(db) {
 		return httpsServer;
 	}
 
-	// Return Express server instance
+	// Return Express server instance	
 	return app;
 };
 

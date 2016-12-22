@@ -9,12 +9,11 @@ var _ = require('lodash'),
 /**
  * Load app configurations
  */
-process.env['NODE_ENV'] = 'development';
+var deployment = 'development';
 module.exports = _.extend(
 	require('./env/all'),
-	require('./env/' + process.env.NODE_ENV) || {}
+	require('./env/' + deployment) || {}
 );
-
 /**
  * Get files by glob patterns
  */
@@ -37,19 +36,16 @@ module.exports.getGlobbedFiles = function(globPatterns, removeRoot) {
 		if (urlRegex.test(globPatterns)) {
 			output.push(globPatterns);
 		} else {
-			glob(globPatterns, {
-				sync: false
-			}, function(err, files) {
+
+			glob(globPatterns, {sync:true}, function(err, files) {
 				if (removeRoot) {
 					files = files.map(function(file) {
 						return file.replace(removeRoot, '');
 					});
 				}
-
 				output = _.union(output, files);
 			});
 		}
 	}
-
 	return output;
 };
